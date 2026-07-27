@@ -67,9 +67,14 @@ impl SolverEngine {
 
     /// Solves a raw JSON auction.
     pub async fn solve(&self, auction: serde_json::Value) -> serde_json::Value {
+        self.post("solve", auction).await
+    }
+
+    /// Posts a raw JSON body to an engine endpoint.
+    pub async fn post(&self, path: &str, body: serde_json::Value) -> serde_json::Value {
         let client = reqwest::Client::new();
-        let url = shared::url::join(&self.url, "solve");
-        let response = client.post(url).json(&auction).send().await.unwrap();
+        let url = shared::url::join(&self.url, path);
+        let response = client.post(url).json(&body).send().await.unwrap();
 
         if !response.status().is_success() {
             panic!(
@@ -80,6 +85,14 @@ impl SolverEngine {
         }
 
         response.json().await.unwrap()
+    }
+
+    /// Posts a raw JSON body, returning the status instead of panicking on
+    /// errors.
+    pub async fn post_status(&self, path: &str, body: serde_json::Value) -> reqwest::StatusCode {
+        let client = reqwest::Client::new();
+        let url = shared::url::join(&self.url, path);
+        client.post(url).json(&body).send().await.unwrap().status()
     }
 }
 

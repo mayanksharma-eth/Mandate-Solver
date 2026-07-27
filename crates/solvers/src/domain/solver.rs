@@ -102,6 +102,17 @@ impl Solver {
         }))
     }
 
+    /// The engine's routing parameters, shared by the CoW batch solver and the
+    /// Mandate per-intent solver.
+    pub fn routing(&self) -> Routing<'_> {
+        Routing {
+            weth: &self.0.weth,
+            base_tokens: &self.0.base_tokens,
+            max_hops: self.0.max_hops,
+            uni_v3_quoter_v2: self.0.uni_v3_quoter_v2.clone(),
+        }
+    }
+
     /// Solves the specified auction, returning a vector of all possible
     /// solutions.
     pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
@@ -349,6 +360,14 @@ fn to_normalized_price(price: f64) -> Option<U256> {
     }
 }
 
+/// The subset of the solver configuration needed to find a route.
+pub struct Routing<'a> {
+    pub weth: &'a eth::WethAddress,
+    pub base_tokens: &'a HashSet<eth::TokenAddress>,
+    pub max_hops: usize,
+    pub uni_v3_quoter_v2: Option<Arc<contracts::alloy::UniswapV3QuoterV2::Instance>>,
+}
+
 /// A baseline routing request.
 #[derive(Debug)]
 pub struct Request {
@@ -361,7 +380,7 @@ pub struct Request {
 /// A trading route.
 #[derive(Debug)]
 pub struct Route<'a> {
-    segments: Vec<Segment<'a>>,
+    pub segments: Vec<Segment<'a>>,
 }
 
 /// A segment in a trading route.
@@ -387,18 +406,18 @@ impl<'a> Route<'a> {
         Some(Self { segments })
     }
 
-    fn input(&self) -> eth::Asset {
+    pub fn input(&self) -> eth::Asset {
         self.segments[0].input
     }
 
-    fn output(&self) -> eth::Asset {
+    pub fn output(&self) -> eth::Asset {
         self.segments
             .last()
             .expect("route has at least one segment by construction")
             .output
     }
 
-    fn gas(&self) -> eth::Gas {
+    pub fn gas(&self) -> eth::Gas {
         eth::Gas(
             self.segments
                 .iter()

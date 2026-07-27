@@ -83,23 +83,25 @@ pub fn into_domain(auction: Auction) -> Result<auction::Auction, Error> {
         liquidity: auction
             .liquidity
             .iter()
-            .map(|liquidity| match liquidity {
-                Liquidity::ConstantProduct(liquidity) => {
-                    constant_product_pool::to_domain(liquidity)
-                }
-                Liquidity::WeightedProduct(liquidity) => {
-                    weighted_product_pool::to_domain(liquidity)
-                }
-                Liquidity::Stable(liquidity) => stable_pool::to_domain(liquidity),
-                Liquidity::ConcentratedLiquidity(liquidity) => {
-                    concentrated_liquidity_pool::to_domain(liquidity)
-                }
-                Liquidity::LimitOrder(liquidity) => Ok(foreign_limit_order::to_domain(liquidity)),
-            })
+            .map(liquidity_to_domain)
             .try_collect()?,
         gas_price: auction::GasPrice(eth::Ether(auction.effective_gas_price)),
         deadline: auction::Deadline(auction.deadline),
     })
+}
+
+/// Converts a single liquidity data transfer object into its domain
+/// representation.
+pub fn liquidity_to_domain(liquidity: &Liquidity) -> Result<liquidity::Liquidity, Error> {
+    match liquidity {
+        Liquidity::ConstantProduct(liquidity) => constant_product_pool::to_domain(liquidity),
+        Liquidity::WeightedProduct(liquidity) => weighted_product_pool::to_domain(liquidity),
+        Liquidity::Stable(liquidity) => stable_pool::to_domain(liquidity),
+        Liquidity::ConcentratedLiquidity(liquidity) => {
+            concentrated_liquidity_pool::to_domain(liquidity)
+        }
+        Liquidity::LimitOrder(liquidity) => Ok(foreign_limit_order::to_domain(liquidity)),
+    }
 }
 
 mod constant_product_pool {
@@ -123,6 +125,7 @@ mod constant_product_pool {
         Ok(liquidity::Liquidity {
             id: liquidity::Id(pool.id.clone()),
             address: pool.address,
+            router: Some(pool.router),
             gas: eth::Gas(pool.gas_estimate),
             state: liquidity::State::ConstantProduct(liquidity::constant_product::Pool {
                 reserves,
@@ -160,6 +163,7 @@ mod weighted_product_pool {
         Ok(liquidity::Liquidity {
             id: liquidity::Id(pool.id.clone()),
             address: pool.address,
+            router: None,
             gas: eth::Gas(pool.gas_estimate),
             state: liquidity::State::WeightedProduct(liquidity::weighted_product::Pool {
                 reserves,
@@ -199,6 +203,7 @@ mod stable_pool {
         Ok(liquidity::Liquidity {
             id: liquidity::Id(pool.id.clone()),
             address: pool.address,
+            router: None,
             gas: eth::Gas(pool.gas_estimate),
             state: liquidity::State::Stable(liquidity::stable::Pool {
                 reserves,
@@ -236,6 +241,7 @@ mod concentrated_liquidity_pool {
         Ok(liquidity::Liquidity {
             id: liquidity::Id(pool.id.clone()),
             address: pool.address,
+            router: Some(pool.router),
             gas: eth::Gas(pool.gas_estimate),
             state: liquidity::State::Concentrated(liquidity::concentrated::Pool {
                 tokens,
@@ -256,6 +262,7 @@ mod foreign_limit_order {
         liquidity::Liquidity {
             id: liquidity::Id(order.id.clone()),
             address: order.address,
+            router: None,
             gas: eth::Gas(order.gas_estimate),
             state: liquidity::State::LimitOrder(liquidity::limit_order::LimitOrder {
                 maker: eth::Asset {

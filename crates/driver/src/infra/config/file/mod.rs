@@ -957,11 +957,11 @@ fn default_metrics_bad_order_detector_freeze_time() -> Duration {
 }
 
 fn default_metrics_bad_order_detector_gc_interval() -> Duration {
-    Duration::from_mins(1)
+    Duration::from_secs(60)
 }
 
 fn default_metrics_bad_order_detector_gc_max_age() -> Duration {
-    Duration::from_hours(1)
+    Duration::from_secs(60 * 60)
 }
 
 /// According to statistics, the average size of the app-data is ~800 bytes.

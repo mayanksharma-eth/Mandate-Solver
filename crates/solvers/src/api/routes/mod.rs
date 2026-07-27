@@ -1,8 +1,9 @@
 use serde::Serialize;
 
 mod healthz;
+pub mod mandate;
 mod metrics;
-mod solve;
+pub mod solve;
 
 pub(super) use {healthz::healthz, metrics::metrics, solve::solve};
 

@@ -518,7 +518,7 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let now = Utc::now();
-        let lookback_time = Duration::from_mins(10);
+        let lookback_time = Duration::from_secs(10 * 60);
 
         let new_order_uid = ByteArray([1; 56]);
         let order_new = Order {

@@ -175,8 +175,8 @@ mod tests {
             2,
             false,
             FREEZE_DURATION,
-            Duration::from_hours(1),
-            Duration::from_hours(1),
+            Duration::from_secs(60 * 60),
+            Duration::from_secs(60 * 60),
             solver::Name("mysolver".to_string()),
         );
 

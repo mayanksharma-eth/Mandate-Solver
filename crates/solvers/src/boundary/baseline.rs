@@ -79,7 +79,11 @@ impl<'a> Solver<'a> {
                     .await
                     .into_iter()
                     .flatten()
-                    .min_by_key(|(_, sell)| sell.value)?
+                    .min_by(|(a_path, a), (b_path, b)| {
+                        a.value
+                            .cmp(&b.value)
+                            .then_with(|| path_key(a_path).cmp(&path_key(b_path)))
+                    })?
             }
             order::Side::Sell => {
                 let futures = candidates.iter().map(|path| async {
@@ -110,7 +114,11 @@ impl<'a> Solver<'a> {
                     .await
                     .into_iter()
                     .flatten()
-                    .max_by_key(|(_, buy)| buy.value)?
+                    .max_by(|(a_path, a), (b_path, b)| {
+                        a.value
+                            .cmp(&b.value)
+                            .then_with(|| path_key(a_path).cmp(&path_key(b_path)))
+                    })?
             }
         };
 
@@ -156,6 +164,16 @@ impl<'a> Solver<'a> {
         }
         Some(segments)
     }
+}
+
+/// Tie-breaker over equally priced routes. Path candidates come out of a
+/// `HashSet`, so without a total order the winner among equal-value paths
+/// varies between runs, which would make routes non-replayable.
+fn path_key<'a>(segments: &'a [solver::Segment<'_>]) -> Vec<&'a str> {
+    segments
+        .iter()
+        .map(|segment| segment.liquidity.id.0.as_str())
+        .collect()
 }
 
 fn to_boundary_liquidity(

@@ -5,4 +5,5 @@ mod buy_order_rounding;
 mod direct_swap;
 mod internalization;
 mod limit_order_quoting;
+mod mandate;
 mod partial_fill;

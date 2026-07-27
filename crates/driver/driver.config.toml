@@ -1,7 +1,9 @@
 tx-gas-limit = "45000000"
+disable-access-list-simulation = true
 [[solver]]
 name = "mysolver" # Arbitrary name given to this solver, must be unique
-endpoint = "http://0.0.0.0:7872"
+endpoint = "http://127.0.0.1:7872"
+skip-liquidity = false
 absolute-slippage = "40000000000000000" # Denominated in wei, optional
 relative-slippage = "0.1" # Percentage in the [0, 1] range
 account = "0x0000000000000000000000000000000000000000000000000000000000000001" # The private key of the solver
@@ -45,6 +47,8 @@ helper = "0x86f3df416979136cb4fdea2c0886301b911c163b"
 base-tokens = [
     "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB",
     "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+    "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
 ]
 
 [[order-priority]]
@@ -57,8 +61,8 @@ strategy = "external-price"
 strategy = "own-quotes"
 max-order-age = "1m"
 
-# [[liquidity.uniswap-v2]] # Uniswap V2 configuration
-# preset = "uniswap-v2" # or "sushi-swap", "honeyswap", "baoswap", "pancake-swap", etc.
+[[liquidity.uniswap-v2]] # Uniswap V2 configuration
+preset = "uniswap-v2" # or "sushi-swap", "honeyswap", "baoswap", "pancake-swap", etc.
 
 # [[liquidity.uniswap-v2]] # Custom Uniswap V2 configuration
 # router = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
@@ -108,4 +112,3 @@ max-order-age = "1m"
 # base-url = "https://api.liquorice.tech/"
 # api-key = "..."
 # http_timeout = "10s"
-

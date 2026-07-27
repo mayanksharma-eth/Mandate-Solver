@@ -13,9 +13,21 @@ use {crate::domain::eth, std::cmp::Ordering};
 pub struct Liquidity {
     pub id: Id,
     pub address: eth::Address,
+    /// The router this liquidity is traded through, where the liquidity kind
+    /// has one. Together with `address` this identifies the venue for
+    /// allowlist purposes.
+    pub router: Option<eth::Address>,
     /// Estimation of gas needed to use this liquidity on-chain.
     pub gas: eth::Gas,
     pub state: State,
+}
+
+impl Liquidity {
+    /// Whether this liquidity is one of the given venues, matching on either
+    /// the pool address or its router.
+    pub fn is_venue(&self, venues: &std::collections::HashSet<eth::Address>) -> bool {
+        venues.contains(&self.address) || self.router.is_some_and(|router| venues.contains(&router))
+    }
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
