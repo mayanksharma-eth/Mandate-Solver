@@ -4,6 +4,18 @@
 
 This repository contains backend code for [Cow Protocol Services](https://docs.cow.fi/) written in Rust.
 
+## Mandate Solver
+
+Mandate uses the `solvers` binary as a lean, non-custodial per-intent route
+optimizer. It evaluates only user-allowed liquidity venues, selects the best
+compliant route above the signed `minBuyAmount`, and returns an abstract route
+for the Mandate driver. It does not hold funds, manage approvals, verify
+signatures, or submit settlement transactions; those responsibilities remain
+with Mandate Foundation and its driver.
+
+See [the Mandate solver guide](crates/solvers/README.md) for the request
+format, validation rules, route boundary, and focused test command.
+
 ## Order Book
 
 The `orderbook` crate provides the http api through which users (usually through a frontend web application) interact with the order book.

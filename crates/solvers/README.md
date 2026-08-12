@@ -25,12 +25,14 @@ An intent is exact-input sell with a hard floor:
 ```jsonc
 {
   "intent": {
+    "signer": "0x...",                 // Foundation intent signer
+    "nonce": "42",                     // Foundation replay-protection nonce
     "sellToken": "0x...",
     "buyToken": "0x...",
     "sellAmount": "133700000000000000",   // exact
     "minBuyAmount": "6000000000000000000000",  // hard floor
     "maxSlippageBps": 50,
-    "deadline": "2026-01-01T00:00:00.000Z",
+    "deadline": 1767225600,             // Unix seconds
     "allowedVenues": ["0x..."]
   },
   "liquidity": [ /* same liquidity objects as /solve */ ],
@@ -55,14 +57,30 @@ How it differs from the batch objective:
 - **Block-pinned liquidity.** `liquiditySource` is required; there is no
   solving against untagged liquidity. Every solution echoes `liquiditySource`
   and `block` so a route is replayable from the same chain state.
+- **Preflight rejection.** The solver rejects expired intents and zero
+  signer/token/venue addresses, equal sell and buy tokens, zero amounts,
+  slippage above 10,000 bps, and empty venue allowlists. These checks avoid
+  producing routes Foundation would reject. Foundation remains authoritative
+  for signature validation, nonce consumption, token movement, and settlement.
 
 `/mandate/quote` takes `sellToken`, `buyToken`, `sellAmount`, `allowedVenues`
 plus the same snapshot, and returns `{ expectedOut, block, liquiditySource }`.
 It is implemented as a floorless solve, so it is by construction the same route
 `/mandate/solve` picks against the same snapshot. Mandate signs `expectedOut`
 into the intent; slippage is then enforced on-chain against that signed
-reference. The engine applies no slippage logic of its own — `maxSlippageBps`
-is accepted as part of the intent and ignored here.
+reference. The engine never weakens the signed `minBuyAmount` floor or invents
+a separate output guarantee.
+
+### Running the focused checks
+
+```sh
+cargo +nightly fmt --check
+cargo test -p solvers mandate
+```
+
+The Mandate suite covers deterministic best-route selection, allowlisted venue
+filtering, hard-floor enforcement, block-pinned liquidity, and preflight
+rejection of structurally invalid intents.
 
 ## Engine / driver boundary
 
