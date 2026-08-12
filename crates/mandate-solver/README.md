@@ -12,7 +12,9 @@ transaction submission.
 - checks the configured chain ID and settlement contract address;
 - rejects expired or malformed intents before routing;
 - filters pools by the user-signed venue allowlist;
-- evaluates direct and bounded multi-hop paths deterministically;
+- evaluates direct and bounded multi-hop paths deterministically; the Base
+  Sepolia alpha is limited to one hop until the Foundation driver encodes and
+  simulates multi-hop calldata;
 - returns the best route at or above `minBuyAmount` as an abstract execution
   plan.
 
@@ -22,10 +24,13 @@ global router allowlisting, token transfers, approvals, and atomic settlement.
 ## Run
 
 ```sh
-export MANDATE_CHAIN_ID=11155111
-export MANDATE_SETTLEMENT_ADDRESS=0xYourSepoliaSettlementAddress
 cargo run -p mandate-solver
 ```
+
+By default it targets the Base Sepolia alpha deployment: chain `84532`, proxy
+`0xBcc2C99AE31477bc15309ba34126e3cb607E4117`, and the configured mock UniV2
+router. Override the chain and settlement address only for another reviewed
+deployment.
 
 The HTTP surface is deliberately small:
 

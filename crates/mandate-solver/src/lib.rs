@@ -7,11 +7,19 @@
 //! for those operations.
 
 use {
-    alloy_primitives::{Address, U256},
+    alloy_primitives::{Address, U256, address},
     serde::{Deserialize, Serialize},
     std::collections::{BTreeSet, HashSet},
     thiserror::Error,
 };
+
+pub const BASE_SEPOLIA_CHAIN_ID: u64 = 84_532;
+pub const BASE_SEPOLIA_SETTLEMENT_PROXY: Address =
+    address!("Bcc2C99AE31477bc15309ba34126e3cb607E4117");
+pub const BASE_SEPOLIA_MOCK_UNIV2_ROUTER: Address =
+    address!("7893A11C3572129BBdDaCE266b87A7A9b23871d2");
+pub const BASE_SEPOLIA_TWETH: Address = address!("40ca30bee6Ca16E67BDc8f39F83e6637f5B623F2");
+pub const BASE_SEPOLIA_TUSD: Address = address!("d88828Fa434B791324856c302d8Ab856E2b6d57C");
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,7 +43,22 @@ pub struct FoundationIntent {
 pub struct SolverConfig {
     pub chain_id: u64,
     pub settlement_contract: Address,
+    pub enabled_routers: HashSet<Address>,
     pub max_hops: usize,
+}
+
+impl SolverConfig {
+    /// Base Sepolia alpha deployment from Mandate Foundation PR #9. One hop is
+    /// deliberate until the Foundation driver can encode and simulate multi-hop
+    /// calldata.
+    pub fn base_sepolia_alpha() -> Self {
+        Self {
+            chain_id: BASE_SEPOLIA_CHAIN_ID,
+            settlement_contract: BASE_SEPOLIA_SETTLEMENT_PROXY,
+            enabled_routers: HashSet::from([BASE_SEPOLIA_MOCK_UNIV2_ROUTER]),
+            max_hops: 1,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -96,6 +119,7 @@ pub struct RouteHop {
     pub amount_in: U256,
     #[serde(with = "uint")]
     pub amount_out: U256,
+    pub gas: u64,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -130,7 +154,10 @@ pub fn solve(
         .liquidity
         .pools
         .into_iter()
-        .filter(|pool| allowed.contains(&pool.address) || allowed.contains(&pool.router))
+        .filter(|pool| {
+            config.enabled_routers.contains(&pool.router)
+                && (allowed.contains(&pool.address) || allowed.contains(&pool.router))
+        })
         .collect::<Vec<_>>();
 
     let mut candidates = Vec::new();
@@ -232,6 +259,11 @@ fn visit(
         if used.contains(&pool.id) {
             continue;
         }
+        if let Some(previous) = route.last()
+            && previous.router != pool.router
+        {
+            continue;
+        }
         let Some((out_token, reserve_in, reserve_out)) = pool.direction(token) else {
             continue;
         };
@@ -248,6 +280,7 @@ fn visit(
             token_out: out_token,
             amount_in: amount,
             amount_out,
+            gas: pool.gas,
         });
         visit(
             out_token,
@@ -265,7 +298,7 @@ fn visit(
 
 impl RouteHop {
     fn gas(&self) -> u64 {
-        0
+        self.gas
     }
 }
 impl ConstantProductPool {
@@ -317,6 +350,7 @@ mod tests {
         SolverConfig {
             chain_id: 11155111,
             settlement_contract: SETTLEMENT,
+            enabled_routers: HashSet::from([ROUTER]),
             max_hops: 2,
         }
     }
@@ -408,6 +442,16 @@ mod tests {
         assert_eq!(
             solve(&config(), request).unwrap_err(),
             SolveError::ChainMismatch
+        );
+    }
+    #[test]
+    fn rejects_a_router_not_enabled_for_foundation() {
+        let mut blocked = pool("a", A, B, 10_000, 20_000);
+        blocked.router = Address::repeat_byte(9);
+        assert!(
+            solve(&config(), request(intent(), vec![blocked]))
+                .unwrap()
+                .is_none()
         );
     }
     #[test]

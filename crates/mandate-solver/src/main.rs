@@ -14,19 +14,14 @@ struct AppState(SolverConfig);
 
 #[tokio::main]
 async fn main() {
-    let chain_id = std::env::var("MANDATE_CHAIN_ID")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(11155111);
-    let settlement_contract = std::env::var("MANDATE_SETTLEMENT_ADDRESS")
-        .expect("MANDATE_SETTLEMENT_ADDRESS is required")
-        .parse()
-        .expect("invalid MANDATE_SETTLEMENT_ADDRESS");
-    let state = Arc::new(AppState(SolverConfig {
-        chain_id,
-        settlement_contract,
-        max_hops: 2,
-    }));
+    let mut config = SolverConfig::base_sepolia_alpha();
+    if let Ok(value) = std::env::var("MANDATE_CHAIN_ID") {
+        config.chain_id = value.parse().expect("invalid MANDATE_CHAIN_ID");
+    }
+    if let Ok(value) = std::env::var("MANDATE_SETTLEMENT_ADDRESS") {
+        config.settlement_contract = value.parse().expect("invalid MANDATE_SETTLEMENT_ADDRESS");
+    }
+    let state = Arc::new(AppState(config));
     let app = Router::new()
         .route("/healthz", get(|| async { "ok" }))
         .route("/v1/solve", post(solve_route))
