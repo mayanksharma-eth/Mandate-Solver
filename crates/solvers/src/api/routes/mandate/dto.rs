@@ -30,6 +30,12 @@ pub struct LiquiditySource {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LimitIntent {
+    /// Wallet that signed the Foundation `LimitIntent`.
+    pub signer: Address,
+    /// The Foundation replay-protection nonce. The solver preserves it for the
+    /// driver handoff but never assigns or consumes nonces itself.
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub nonce: U256,
     pub sell_token: Address,
     pub buy_token: Address,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -39,9 +45,8 @@ pub struct LimitIntent {
     /// Accepted as part of the signed intent but unused by the engine:
     /// slippage is enforced on-chain against the signed `expectedOut`.
     pub max_slippage_bps: u16,
-    /// Accepted as part of the signed intent but unused by the engine: expiry
-    /// is checked at settlement.
-    pub deadline: chrono::DateTime<chrono::Utc>,
+    /// Unix timestamp, matching `MandateSettlement.LimitIntent.deadline`.
+    pub deadline: u64,
     /// Pool or router addresses this intent permits routing through.
     pub allowed_venues: Vec<Address>,
 }
@@ -141,6 +146,60 @@ pub fn intent_to_domain(intent: &LimitIntent) -> mandate::Intent {
         },
         allowed_venues: intent.allowed_venues.iter().copied().collect(),
     }
+}
+
+/// Reject malformed or already-expired data before route finding. The
+/// settlement contract remains authoritative for signature, nonce and balance
+/// checks; these checks avoid returning a route the contract must reject.
+pub fn validate_intent(intent: &LimitIntent) -> Result<(), Error> {
+    if intent.signer.is_zero() {
+        return Err("signer must not be zero".into());
+    }
+    if intent.sell_token.is_zero() || intent.buy_token.is_zero() {
+        return Err("token must not be zero".into());
+    }
+    if intent.sell_token == intent.buy_token {
+        return Err("sell and buy token must differ".into());
+    }
+    if intent.sell_amount.is_zero() || intent.min_buy_amount.is_zero() {
+        return Err("amounts must be nonzero".into());
+    }
+    if intent.deadline <= chrono::Utc::now().timestamp().unsigned_abs() {
+        return Err("intent deadline has expired".into());
+    }
+    if intent.max_slippage_bps > 10_000 {
+        return Err("max slippage must not exceed 10000 bps".into());
+    }
+    if intent.allowed_venues.is_empty()
+        || intent
+            .allowed_venues
+            .iter()
+            .any(|venue| *venue == Address::ZERO)
+    {
+        return Err("allowed venues must be nonempty and nonzero".into());
+    }
+    Ok(())
+}
+
+pub fn validate_quote(request: &QuoteRequest) -> Result<(), Error> {
+    if request.sell_token.is_zero() || request.buy_token.is_zero() {
+        return Err("token must not be zero".into());
+    }
+    if request.sell_token == request.buy_token {
+        return Err("sell and buy token must differ".into());
+    }
+    if request.sell_amount.is_zero() {
+        return Err("sell amount must be nonzero".into());
+    }
+    if request.allowed_venues.is_empty()
+        || request
+            .allowed_venues
+            .iter()
+            .any(|venue| *venue == Address::ZERO)
+    {
+        return Err("allowed venues must be nonempty and nonzero".into());
+    }
+    Ok(())
 }
 
 impl From<mandate::Fill> for Solution {

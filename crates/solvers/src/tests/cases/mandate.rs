@@ -13,6 +13,8 @@ const POOL_B: &str = "0x3041cbd36888becc7bbcbc0045e3b1f144466f5f";
 const ROUTER_B: &str = "0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9f";
 
 const SELL_AMOUNT: &str = "133700000000000000";
+const SIGNER: &str = "0x1111111111111111111111111111111111111111";
+const DEADLINE: u64 = 4_102_444_800;
 /// Constant-product output of `SELL_AMOUNT` against pool A, wei-exact:
 /// `997 * x * Y / (1000 * X + 997 * x)`.
 const OUT_A: &str = "6043910341261930467761";
@@ -77,12 +79,14 @@ fn liquidity_source() -> serde_json::Value {
 fn solve_request(min_buy_amount: &str, allowed_venues: serde_json::Value) -> serde_json::Value {
     json!({
         "intent": {
+            "signer": SIGNER,
+            "nonce": "42",
             "sellToken": WETH,
             "buyToken": COW,
             "sellAmount": SELL_AMOUNT,
             "minBuyAmount": min_buy_amount,
             "maxSlippageBps": 50,
-            "deadline": "2106-01-01T00:00:00.000Z",
+            "deadline": DEADLINE,
             "allowedVenues": allowed_venues,
         },
         "liquidity": pools(),
@@ -166,16 +170,17 @@ async fn no_allowed_venue_yields_no_solution() {
     assert_eq!(solution, json!({ "solution": null }));
 }
 
-/// An empty allowlist permits nothing.
+/// An empty allowlist is malformed: it could never produce a valid Foundation
+/// settlement, so reject it instead of doing route work.
 #[tokio::test]
-async fn empty_allowlist_yields_no_solution() {
+async fn empty_allowlist_is_rejected() {
     let engine = engine().await;
 
-    let solution = engine
-        .post("mandate/solve", solve_request("1", json!([])))
+    let status = engine
+        .post_status("mandate/solve", solve_request("1", json!([])))
         .await;
 
-    assert_eq!(solution, json!({ "solution": null }));
+    assert_eq!(status, axum::http::StatusCode::BAD_REQUEST);
 }
 
 /// A route below the intent's floor is not a fill.
@@ -215,6 +220,8 @@ async fn quote_matches_solve() {
                 "mandate/quote",
                 json!({
                     "sellToken": WETH,
+                    "signer": SIGNER,
+                    "nonce": "42",
                     "buyToken": COW,
                     "sellAmount": SELL_AMOUNT,
                     "allowedVenues": venues,
@@ -254,7 +261,7 @@ async fn untagged_liquidity_is_rejected() {
                     "sellAmount": SELL_AMOUNT,
                     "minBuyAmount": "1",
                     "maxSlippageBps": 50,
-                    "deadline": "2106-01-01T00:00:00.000Z",
+                    "deadline": DEADLINE,
                     "allowedVenues": [ROUTER_A],
                 },
                 "liquidity": pools(),
@@ -263,4 +270,55 @@ async fn untagged_liquidity_is_rejected() {
         .await;
 
     assert!(!status.is_success(), "untagged liquidity was accepted");
+}
+
+/// A route for an expired or structurally invalid Foundation intent would be
+/// unusable, so the solver rejects it before spending routing effort.
+#[tokio::test]
+async fn rejects_unsettleable_intents_before_routing() {
+    let engine = engine().await;
+
+    let expired = engine
+        .post_status(
+            "mandate/solve",
+            json!({
+                "intent": {
+                    "signer": SIGNER,
+                    "nonce": "42",
+                    "sellToken": WETH,
+                    "buyToken": COW,
+                    "sellAmount": SELL_AMOUNT,
+                    "minBuyAmount": "1",
+                    "maxSlippageBps": 50,
+                    "deadline": 1,
+                    "allowedVenues": [ROUTER_A],
+                },
+                "liquidity": pools(),
+                "liquiditySource": liquidity_source(),
+            }),
+        )
+        .await;
+    assert_eq!(expired, axum::http::StatusCode::BAD_REQUEST);
+
+    let zero_signer = engine
+        .post_status(
+            "mandate/solve",
+            json!({
+                "intent": {
+                    "signer": "0x0000000000000000000000000000000000000000",
+                    "nonce": "42",
+                    "sellToken": WETH,
+                    "buyToken": COW,
+                    "sellAmount": SELL_AMOUNT,
+                    "minBuyAmount": "1",
+                    "maxSlippageBps": 50,
+                    "deadline": DEADLINE,
+                    "allowedVenues": [ROUTER_A],
+                },
+                "liquidity": pools(),
+                "liquiditySource": liquidity_source(),
+            }),
+        )
+        .await;
+    assert_eq!(zero_signer, axum::http::StatusCode::BAD_REQUEST);
 }

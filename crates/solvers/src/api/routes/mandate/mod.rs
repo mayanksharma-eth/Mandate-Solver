@@ -14,6 +14,9 @@ pub async fn solve(
     axum::extract::Json(request): axum::extract::Json<dto::SolveRequest>,
 ) -> (axum::http::StatusCode, Json<dto::SolveResponse>) {
     let handle_request = async {
+        if let Err(err) = dto::validate_intent(&request.intent) {
+            return bad_request(err);
+        }
         let snapshot = match dto::snapshot_to_domain(&request.liquidity, request.liquidity_source) {
             Ok(value) => value,
             Err(err) => return bad_request(err),
@@ -38,6 +41,9 @@ pub async fn quote(
     axum::extract::Json(request): axum::extract::Json<dto::QuoteRequest>,
 ) -> (axum::http::StatusCode, Json<dto::QuoteResponse>) {
     let handle_request = async {
+        if let Err(err) = dto::validate_quote(&request) {
+            return bad_request(err);
+        }
         let snapshot = match dto::snapshot_to_domain(&request.liquidity, request.liquidity_source) {
             Ok(value) => value,
             Err(err) => return bad_request(err),

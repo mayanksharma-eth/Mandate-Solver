@@ -17,10 +17,9 @@ use {
 
 /// A user-signed Mandate limit intent, reduced to what routing needs.
 ///
-/// `maxSlippageBps` and `deadline` are part of the signed intent but are
-/// deliberately absent: slippage is enforced on-chain against the signed
-/// `expectedOut`, and expiry is checked at settlement. Neither is a routing
-/// input.
+/// `maxSlippageBps` and `deadline` are retained by the API handoff. Slippage
+/// is enforced on-chain and expiry is preflight-checked before this routing
+/// representation is constructed; neither changes route selection.
 #[derive(Debug)]
 pub struct Intent {
     /// The exact amount of `sell.token` the signer provides.
