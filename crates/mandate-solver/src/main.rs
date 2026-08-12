@@ -1,7 +1,6 @@
 use {
     axum::{
-        Json,
-        Router,
+        Json, Router,
         extract::State,
         http::StatusCode,
         routing::{get, post},

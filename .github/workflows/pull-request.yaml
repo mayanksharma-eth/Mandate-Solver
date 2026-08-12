@@ -10,11 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo +nightly fmt --package mandate-solver -- --check
-      - run: cargo +nightly clippy --package mandate-solver --all-targets -- -D warnings
-      - run: cargo +nightly test --package mandate-solver
-      - run: cargo +nightly build --package mandate-solver --release
+      - run: cargo fmt --package mandate-solver -- --check
+      - run: cargo clippy --package mandate-solver --all-targets -- -D warnings
+      - run: cargo test --package mandate-solver
+      - run: cargo build --package mandate-solver --release

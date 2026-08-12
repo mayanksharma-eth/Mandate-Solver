@@ -37,8 +37,8 @@ The HTTP surface is deliberately small:
 ## Quality gate
 
 ```sh
-cargo +nightly fmt --package mandate-solver -- --check
-cargo +nightly clippy --package mandate-solver --all-targets -- -D warnings
-cargo +nightly test --package mandate-solver
-cargo +nightly build --package mandate-solver --release
+cargo fmt --package mandate-solver -- --check
+cargo clippy --package mandate-solver --all-targets -- -D warnings
+cargo test --package mandate-solver
+cargo build --package mandate-solver --release
 ```
