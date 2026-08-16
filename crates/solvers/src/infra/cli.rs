@@ -2,7 +2,7 @@
 
 use {
     clap::{Parser, Subcommand},
-    std::{net::SocketAddr, path::PathBuf},
+    std::{net::SocketAddr, path::PathBuf, time::Duration},
 };
 
 /// Run a solver engine
@@ -24,6 +24,16 @@ pub struct Args {
     /// The socket address to bind to.
     #[arg(long, env, default_value = "127.0.0.1:7872")]
     pub addr: SocketAddr,
+
+    /// How many `/mandate/*` requests may be solved at the same time. Requests
+    /// arriving beyond this limit are shed with a 503 instead of queueing.
+    #[arg(long, env, default_value = "32")]
+    pub max_concurrent_requests: usize,
+
+    /// How long a `/mandate/*` request may take before it is abandoned with a
+    /// 504.
+    #[arg(long, env, default_value = "10s", value_parser = humantime::parse_duration)]
+    pub request_timeout: Duration,
 
     #[command(subcommand)]
     pub command: Command,

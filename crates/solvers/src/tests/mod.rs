@@ -11,6 +11,7 @@ use {
 };
 
 mod cases;
+pub mod gate;
 
 /// A solver engine handle for E2E testing.
 pub struct SolverEngine {
@@ -30,14 +31,20 @@ impl SolverEngine {
     /// Creates a new solver engine handle for the specified command
     /// configuration.
     pub async fn new(command: &str, config: Config) -> Self {
+        Self::with_args(command, config, &[]).await
+    }
+
+    /// Same, with additional command line arguments for the engine.
+    pub async fn with_args(command: &str, config: Config, extra: &[&str]) -> Self {
         let (bind, bind_receiver) = oneshot::channel();
 
         let mut args = vec![
             "/test/solvers/path".to_owned(),
             "--addr=0.0.0.0:0".to_owned(),
             "--log=solvers=trace".to_owned(),
-            command.to_owned(),
         ];
+        args.extend(extra.iter().map(|arg| (*arg).to_owned()));
+        args.push(command.to_owned());
         let tempfile = match config {
             Config::None => None,
             Config::File(path) => {
@@ -90,9 +97,20 @@ impl SolverEngine {
     /// Posts a raw JSON body, returning the status instead of panicking on
     /// errors.
     pub async fn post_status(&self, path: &str, body: serde_json::Value) -> reqwest::StatusCode {
+        self.post_response(path, body).await.status()
+    }
+
+    /// Fetches the engine's Prometheus metrics.
+    pub async fn metrics(&self) -> String {
+        let url = shared::url::join(&self.url, "metrics");
+        reqwest::get(url).await.unwrap().text().await.unwrap()
+    }
+
+    /// Posts a raw JSON body, returning the whole response.
+    pub async fn post_response(&self, path: &str, body: serde_json::Value) -> reqwest::Response {
         let client = reqwest::Client::new();
         let url = shared::url::join(&self.url, path);
-        client.post(url).json(&body).send().await.unwrap().status()
+        client.post(url).json(&body).send().await.unwrap()
     }
 }
 

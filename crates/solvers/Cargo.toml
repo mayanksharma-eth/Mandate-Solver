@@ -23,6 +23,7 @@ const-hex = { workspace = true }
 derive_more = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
+humantime = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
 mimalloc = { workspace = true, optional = true }
@@ -38,7 +39,7 @@ solvers-dto = { workspace = true }
 tikv-jemallocator = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "time"] }
 toml = { workspace = true }
-tower = { workspace = true }
+tower = { workspace = true, features = ["limit", "load-shed", "timeout"] }
 tower-http = { workspace = true, features = ["limit", "trace"] }
 url = { workspace = true, features = ["serde"] }
 
