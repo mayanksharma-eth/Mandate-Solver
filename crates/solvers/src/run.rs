@@ -49,6 +49,8 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
     crate::api::Api {
         addr: args.addr,
         solver,
+        max_concurrent_requests: args.max_concurrent_requests,
+        request_timeout: args.request_timeout,
     }
     .serve(bind, shutdown_signal())
     .await

@@ -3,7 +3,7 @@
 use {
     crate::{
         api::routes::{Error, solve::dto::auction::liquidity_to_domain},
-        domain::{eth, mandate},
+        domain::{eth, mandate, solver},
     },
     alloy::primitives::{Address, U256},
     itertools::Itertools,
@@ -57,6 +57,17 @@ pub struct SolveRequest {
     pub intent: LimitIntent,
     pub liquidity: Vec<Liquidity>,
     pub liquidity_source: LiquiditySource,
+    #[serde(flatten)]
+    pub deployment: Deployment,
+}
+
+/// Which Mandate deployment the caller believes it is talking to. Checked
+/// against the engine's configured deployment, when it has one.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Deployment {
+    pub chain_id: Option<u64>,
+    pub settlement_contract: Option<Address>,
 }
 
 #[serde_as]
@@ -70,6 +81,8 @@ pub struct QuoteRequest {
     pub allowed_venues: Vec<Address>,
     pub liquidity: Vec<Liquidity>,
     pub liquidity_source: LiquiditySource,
+    #[serde(flatten)]
+    pub deployment: Deployment,
 }
 
 /// An abstract route. No calldata, no executor address: turning this into an
@@ -170,13 +183,30 @@ pub fn validate_intent(intent: &LimitIntent) -> Result<(), Error> {
     if intent.max_slippage_bps > 10_000 {
         return Err("max slippage must not exceed 10000 bps".into());
     }
-    if intent.allowed_venues.is_empty()
-        || intent
-            .allowed_venues
-            .iter()
-            .any(|venue| *venue == Address::ZERO)
-    {
+    if intent.allowed_venues.is_empty() || intent.allowed_venues.contains(&Address::ZERO) {
         return Err("allowed venues must be nonempty and nonzero".into());
+    }
+    Ok(())
+}
+
+/// Reject a request aimed at a different Mandate deployment. A route computed
+/// here could never settle there, and silently returning one lets an interface
+/// pointed at the wrong contract look healthy.
+pub fn validate_deployment(
+    request: &Deployment,
+    configured: &solver::MandateDeployment,
+) -> Result<(), Error> {
+    if let Some(chain_id) = configured.chain_id
+        && request.chain_id != Some(chain_id)
+    {
+        return Err("request chain does not match the configured Mandate deployment".into());
+    }
+    if let Some(settlement) = configured.settlement
+        && request.settlement_contract != Some(settlement)
+    {
+        return Err(
+            "request settlement contract does not match the configured Mandate deployment".into(),
+        );
     }
     Ok(())
 }
@@ -191,12 +221,7 @@ pub fn validate_quote(request: &QuoteRequest) -> Result<(), Error> {
     if request.sell_amount.is_zero() {
         return Err("sell amount must be nonzero".into());
     }
-    if request.allowed_venues.is_empty()
-        || request
-            .allowed_venues
-            .iter()
-            .any(|venue| *venue == Address::ZERO)
-    {
+    if request.allowed_venues.is_empty() || request.allowed_venues.contains(&Address::ZERO) {
         return Err("allowed venues must be nonempty and nonzero".into());
     }
     Ok(())

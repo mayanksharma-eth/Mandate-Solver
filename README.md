@@ -11,6 +11,10 @@ with Mandate Foundation and its driver.
 
 See [the Mandate solver guide](crates/solvers/README.md) for the request
 format, validation rules, route boundary, and focused test command.
+Routing configuration is capped at startup so a config cannot produce a
+candidate set large enough to hold runtime workers; the limits, the timeout
+semantics they compensate for, and when to revisit them are in
+[docs/MANDATE.md](docs/MANDATE.md), backed by [docs/MANDATE-BENCH.md](docs/MANDATE-BENCH.md).
 
 ## Order Book
 

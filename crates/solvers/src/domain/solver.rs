@@ -10,9 +10,7 @@ use {
     crate::{
         boundary,
         domain::{
-            auction,
-            eth,
-            liquidity,
+            auction, eth, liquidity,
             order::{self, Order, Side},
             solution,
         },
@@ -38,6 +36,15 @@ pub struct Config {
     pub solution_gas_offset: eth::SignedGas,
     pub native_token_price_estimation_amount: eth::U256,
     pub uni_v3_node_url: Option<Url>,
+    pub mandate: MandateDeployment,
+}
+
+/// The Mandate deployment this engine serves. Either field being set makes the
+/// corresponding `/mandate/*` request field mandatory and checked.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct MandateDeployment {
+    pub chain_id: Option<u64>,
+    pub settlement: Option<eth::Address>,
 }
 
 struct Inner {
@@ -72,6 +79,9 @@ struct Inner {
 
     /// If provided, the solver can rely on Uniswap V3 LPs
     uni_v3_quoter_v2: Option<Arc<contracts::alloy::UniswapV3QuoterV2::Instance>>,
+
+    /// The Mandate deployment `/mandate/*` requests are checked against.
+    mandate: MandateDeployment,
 }
 
 impl Solver {
@@ -99,7 +109,12 @@ impl Solver {
             solution_gas_offset: config.solution_gas_offset,
             native_token_price_estimation_amount: config.native_token_price_estimation_amount,
             uni_v3_quoter_v2,
+            mandate: config.mandate,
         }))
+    }
+
+    pub fn mandate_deployment(&self) -> MandateDeployment {
+        self.0.mandate
     }
 
     /// The engine's routing parameters, shared by the CoW batch solver and the

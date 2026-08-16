@@ -22,7 +22,11 @@ const OUT_A: &str = "6043910341261930467761";
 const OUT_B: &str = "5847160920332621778484";
 
 async fn engine() -> tests::SolverEngine {
-    tests::SolverEngine::new(
+    engine_with(&[]).await
+}
+
+async fn engine_with(args: &[&str]) -> tests::SolverEngine {
+    tests::SolverEngine::with_args(
         "baseline",
         tests::Config::String(
             r#"
@@ -34,6 +38,7 @@ native-token-price-estimation-amount = "100000000000000000"
             "#
             .to_owned(),
         ),
+        args,
     )
     .await
 }
@@ -321,4 +326,284 @@ async fn rejects_unsettleable_intents_before_routing() {
         )
         .await;
     assert_eq!(zero_signer, axum::http::StatusCode::BAD_REQUEST);
+}
+
+/// A request whose liquidity source is gated, so it parks inside the handler
+/// until the test lets it through.
+fn gated_request(source: &str) -> serde_json::Value {
+    let mut request = solve_request("1", json!([ROUTER_A]));
+    request["liquiditySource"]["name"] = json!(source);
+    request
+}
+
+/// A body over the limit is refused by the server rather than deserialized.
+#[tokio::test]
+async fn oversized_body_is_rejected() {
+    let engine = engine().await;
+
+    let mut request = solve_request("1", json!([ROUTER_A]));
+    request["liquiditySource"]["name"] = json!("x".repeat(11 * 1024 * 1024));
+
+    assert_eq!(
+        engine.post_status("mandate/solve", request).await,
+        axum::http::StatusCode::PAYLOAD_TOO_LARGE,
+    );
+}
+
+/// Beyond the concurrency limit, requests are shed immediately instead of
+/// queueing, and the capacity comes back once the in-flight request finishes.
+#[tokio::test]
+async fn overload_sheds_and_recovers() {
+    let engine = engine_with(&["--max-concurrent-requests=1"]).await;
+    let gate = tests::gate::install("gate-overload");
+
+    let occupy = engine.post_status("mandate/solve", gated_request("gate-overload"));
+    let shed = async {
+        // The first request now holds the only permit.
+        gate.arrived().await;
+
+        let response = engine
+            .post_response("mandate/solve", solve_request("1", json!([ROUTER_A])))
+            .await;
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(response.headers()["retry-after"], "1");
+        assert_eq!(
+            response.json::<serde_json::Value>().await.unwrap(),
+            json!({ "message": "solver is at capacity" }),
+        );
+
+        gate.release();
+    };
+
+    let (occupied, ()) = tokio::join!(occupy, shed);
+    assert_eq!(occupied, axum::http::StatusCode::OK);
+
+    let solution = engine
+        .post("mandate/solve", solve_request("1", json!([ROUTER_A])))
+        .await;
+    assert_eq!(solution["solution"]["expectedOut"], OUT_A);
+}
+
+/// A request that finishes within the deadline is unaffected by it.
+#[tokio::test]
+async fn succeeds_below_timeout() {
+    let engine = engine_with(&["--request-timeout=10s"]).await;
+
+    let solution = engine
+        .post("mandate/solve", solve_request("1", json!([ROUTER_A])))
+        .await;
+
+    assert_eq!(solution["solution"]["expectedOut"], OUT_A);
+}
+
+/// A request past its deadline is abandoned, and abandoning it returns the
+/// permit it was holding.
+#[tokio::test]
+async fn timeout_releases_capacity() {
+    let engine = engine_with(&["--request-timeout=200ms", "--max-concurrent-requests=1"]).await;
+    // Never released: the request can only end by timing out.
+    tests::gate::install("gate-timeout");
+
+    let response = engine
+        .post_response("mandate/solve", gated_request("gate-timeout"))
+        .await;
+    assert_eq!(response.status(), axum::http::StatusCode::GATEWAY_TIMEOUT);
+    assert_eq!(
+        response.json::<serde_json::Value>().await.unwrap(),
+        json!({ "message": "solving exceeded the request deadline" }),
+    );
+
+    let solution = engine
+        .post("mandate/solve", solve_request("1", json!([ROUTER_A])))
+        .await;
+    assert_eq!(solution["solution"]["expectedOut"], OUT_A);
+}
+
+/// The value of one Prometheus sample, or 0 when it has not been touched.
+///
+/// The registry is process wide, so concurrently running tests share these
+/// counters. Assertions below therefore only compare a counter against its own
+/// earlier value, which is sound because counters never decrease.
+fn sample(metrics: &str, key: &str) -> u64 {
+    metrics
+        .lines()
+        .find_map(|line| line.strip_prefix(key))
+        .map_or(0, |value| value.trim().parse::<f64>().unwrap() as u64)
+}
+
+fn requests(metrics: &str, endpoint: &str, result: &str) -> u64 {
+    sample(
+        metrics,
+        &format!(
+            r#"solver_engine_mandate_requests_total{{endpoint="{endpoint}",result="{result}"}}"#
+        ),
+    )
+}
+
+fn durations(metrics: &str, endpoint: &str) -> u64 {
+    sample(
+        metrics,
+        &format!(r#"solver_engine_mandate_duration_seconds_count{{endpoint="{endpoint}"}}"#),
+    )
+}
+
+/// Every outcome a handler can reach is counted under its own result label, and
+/// each request lands in the duration histogram.
+#[tokio::test]
+async fn metrics_record_handler_outcomes() {
+    let engine = engine().await;
+    let before = engine.metrics().await;
+
+    engine
+        .post("mandate/solve", solve_request("1", json!([ROUTER_A])))
+        .await;
+    engine
+        .post("mandate/solve", solve_request("1", json!([SIGNER])))
+        .await;
+    engine
+        .post_status("mandate/solve", solve_request("1", json!([])))
+        .await;
+    engine
+        .post(
+            "mandate/quote",
+            json!({
+                "sellToken": WETH,
+                "buyToken": COW,
+                "sellAmount": SELL_AMOUNT,
+                "allowedVenues": [ROUTER_A],
+                "liquidity": pools(),
+                "liquiditySource": liquidity_source(),
+            }),
+        )
+        .await;
+
+    let after = engine.metrics().await;
+    for (endpoint, result) in [
+        ("solve", "fill"),
+        ("solve", "no_fill"),
+        ("solve", "bad_request"),
+        ("quote", "fill"),
+    ] {
+        assert!(
+            requests(&after, endpoint, result) > requests(&before, endpoint, result),
+            "{endpoint}/{result} was not counted",
+        );
+    }
+    assert!(durations(&after, "solve") > durations(&before, "solve"));
+    assert!(durations(&after, "quote") > durations(&before, "quote"));
+}
+
+/// A shed request never reaches the handler, so the middleware counts it.
+#[tokio::test]
+async fn metrics_record_overload() {
+    let engine = engine_with(&["--max-concurrent-requests=1"]).await;
+    let gate = tests::gate::install("gate-overload-metrics");
+    let before = engine.metrics().await;
+
+    let occupy = engine.post_status("mandate/solve", gated_request("gate-overload-metrics"));
+    let shed = async {
+        gate.arrived().await;
+        let status = engine
+            .post_status("mandate/solve", solve_request("1", json!([ROUTER_A])))
+            .await;
+        assert_eq!(status, axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        gate.release();
+    };
+    tokio::join!(occupy, shed);
+
+    let after = engine.metrics().await;
+    assert!(requests(&after, "solve", "overloaded") > requests(&before, "solve", "overloaded"));
+}
+
+/// A request abandoned at its deadline is counted as a timeout, and still lands
+/// in the duration histogram — which is the same drop that releases its
+/// in-flight slot, so cancellation accounting is exercised here too.
+#[tokio::test]
+async fn metrics_record_timeout() {
+    let engine = engine_with(&["--request-timeout=200ms"]).await;
+    tests::gate::install("gate-timeout-metrics");
+    let before = engine.metrics().await;
+
+    let status = engine
+        .post_status("mandate/solve", gated_request("gate-timeout-metrics"))
+        .await;
+    assert_eq!(status, axum::http::StatusCode::GATEWAY_TIMEOUT);
+
+    let after = engine.metrics().await;
+    assert!(requests(&after, "solve", "timeout") > requests(&before, "solve", "timeout"));
+    assert!(durations(&after, "solve") > durations(&before, "solve"));
+}
+
+/// An engine pinned to one Mandate deployment.
+async fn pinned_engine() -> tests::SolverEngine {
+    tests::SolverEngine::new(
+        "baseline",
+        tests::Config::String(
+            r#"
+chain-id = "1"
+base-tokens = []
+max-hops = 0
+max-partial-attempts = 5
+native-token-price-estimation-amount = "100000000000000000"
+mandate-chain-id = 1
+mandate-settlement = "0xBcc2C99AE31477bc15309ba34126e3cb607E4117"
+            "#
+            .to_owned(),
+        ),
+    )
+    .await
+}
+
+const SETTLEMENT: &str = "0xBcc2C99AE31477bc15309ba34126e3cb607E4117";
+
+/// A route computed here cannot settle on another deployment, so a request
+/// naming one — or naming none at all — is rejected rather than answered.
+#[tokio::test]
+async fn deployment_is_pinned() {
+    let engine = pinned_engine().await;
+    let request = |deployment: serde_json::Value| {
+        let mut request = solve_request("1", json!([ROUTER_A]));
+        let object = request.as_object_mut().unwrap();
+        for (key, value) in deployment.as_object().unwrap() {
+            object.insert(key.clone(), value.clone());
+        }
+        request
+    };
+
+    let matching = engine
+        .post(
+            "mandate/solve",
+            request(json!({ "chainId": 1, "settlementContract": SETTLEMENT })),
+        )
+        .await;
+    assert_eq!(matching["solution"]["expectedOut"], OUT_A);
+
+    for wrong in [
+        json!({ "chainId": 8453, "settlementContract": SETTLEMENT }),
+        json!({ "chainId": 1, "settlementContract": POOL_A }),
+        // Omitting the fields must not bypass the check.
+        json!({ "chainId": 1 }),
+        json!({}),
+    ] {
+        assert_eq!(
+            engine.post_status("mandate/solve", request(wrong)).await,
+            axum::http::StatusCode::BAD_REQUEST,
+        );
+    }
+}
+
+/// The deployment is unpinned unless configured, so the checked fields stay
+/// optional for callers that do not send them.
+#[tokio::test]
+async fn deployment_is_unchecked_when_unconfigured() {
+    let engine = engine().await;
+
+    let solution = engine
+        .post("mandate/solve", solve_request("1", json!([ROUTER_A])))
+        .await;
+
+    assert_eq!(solution["solution"]["expectedOut"], OUT_A);
 }

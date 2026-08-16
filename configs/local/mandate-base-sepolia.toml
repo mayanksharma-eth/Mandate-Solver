@@ -1,0 +1,18 @@
+# Mandate Foundation alpha on Base Sepolia (chain 84532).
+#
+# `chain-id` is deliberately absent: 84532 is not in the `Chain` enum, so the
+# `weth` escape hatch is used instead. Update `weth` for another deployment.
+weth = "0x40ca30bee6Ca16E67BDc8f39F83e6637f5B623F2" # tWETH
+
+# No intermediary hops: the Foundation driver cannot encode multi-hop calldata
+# yet. `max-hops` counts intermediary tokens, so 0 means direct swaps only.
+base-tokens = []
+max-hops = 0
+
+# The deployment this engine serves. Requests must name both, so an interface
+# pointed at another deployment gets a 400 rather than an unsettleable route.
+mandate-chain-id = 84532
+mandate-settlement = "0xBcc2C99AE31477bc15309ba34126e3cb607E4117"
+
+max-partial-attempts = 5
+native-token-price-estimation-amount = "100000000000000000" # 0.1 tWETH
